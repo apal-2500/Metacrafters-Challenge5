@@ -1,6 +1,5 @@
 // import react functionalities
 import React from 'react';
-import logo from './logo.svg';
 import './App.css';
 import {
   Connection,
@@ -13,6 +12,7 @@ import {
   SystemProgram,
 } from "@solana/web3.js";
 import {useEffect , useState } from "react";
+window.Buffer = window.Buffer || require('buffer').Buffer;
 
 // create types
 type DisplayEncoding = "utf8" | "hex";
@@ -63,11 +63,14 @@ function App() {
     undefined
   );
   
-  //create state variable for generated keypair
-  var [newPair, setNewPair] = useState<Keypair | undefined>(undefined);
-  var [step2PKey, setstep2PKey] = useState('');
-  var newPublicKeyStr;
-  var step1pubKey;  
+  //create state variable for from keypair
+  const [fromkey, setFromKey] = useState([] as any);
+  const fromPair = Keypair.fromSecretKey(Uint8Array.from(fromkey));
+  
+  //create state variable for to keypair
+  // eslint-disable-next-line
+  const [tokey, setToKey] = useState([] as any);
+  
   // create state variable for the wallet key
   const [walletKey, setWalletKey] = useState<PhantomProvider | undefined>(
     undefined
@@ -82,45 +85,47 @@ function App() {
         else setProvider(undefined);
   }, []);
 
+  const step1 = async ()=>{
+    createWallet();
+    airDropSol();
+  };
+
   const createWallet = async () =>{
     //@ts-ignore
+    // eslint-disable-next-line
     const { solana } = window;
   
   // Create a new keypair
-    const step1kPair = new Keypair();
+    const step1kPair = Keypair.generate();
+    setFromKey(step1kPair)
+    console.log("Public Key of the generated Step 1 keypair", step1kPair.publicKey);
+  };
 
-  // Exact the public key from the keypair
-    const step1Key = new PublicKey(step1kPair.publicKey).toString();
-    step1pubKey = step1Key
-    setNewPair(step1kPair);
-    console.log("Public Key of the generated Step 1 keypair", step1kPair);
+  const airDropSol = async () => {
+      // Connect to the Devnet
+      const connection = new Connection(clusterApiUrl("devnet"), "confirmed");
+      // Request airdrop of 2 SOL to the wallet
+      console.log("Airdropping some SOL to Step 1 wallet!");
+      const fromAirDropSignature = await connection.requestAirdrop(
+          new PublicKey(fromPair.publicKey),
+          2 * LAMPORTS_PER_SOL
+      );
+      // Latest blockhash (unique identifer of the block) of the cluster
+      let latestBlockHash = await connection.getLatestBlockhash();
 
+      // Confirm transaction using the last valid block height (refers to its time)
+      // to check for transaction expiration
+      await connection.confirmTransaction({
+          blockhash: latestBlockHash.blockhash,
+          lastValidBlockHeight: latestBlockHash.lastValidBlockHeight,
+          signature: fromAirDropSignature
+       });
 
-    const airDropSol = async () => {
-        // Connect to the Devnet
-        const connection = new Connection(clusterApiUrl("devnet"), "confirmed");
-        // Request airdrop of 2 SOL to the wallet
-        console.log("Airdropping some SOL to Step 1 wallet!");
-        const fromAirDropSignature = await connection.requestAirdrop(
-            new PublicKey(step1kPair.publicKey),
-            2 * LAMPORTS_PER_SOL
-        );
-        // Latest blockhash (unique identifer of the block) of the cluster
-        let latestBlockHash = await connection.getLatestBlockhash();
+      console.log("Airdrop completed Step 1 Wallet");
 
-        // Confirm transaction using the last valid block height (refers to its time)
-        // to check for transaction expiration
-        await connection.confirmTransaction({
-            blockhash: latestBlockHash.blockhash,
-            lastValidBlockHeight: latestBlockHash.lastValidBlockHeight,
-            signature: fromAirDropSignature
-        });
-
-        console.log("Airdrop completed Step 1 Wallet");
-
-        //Get balance for Step 1:
-        let step1Balance = await connection.getBalance(new PublicKey(step1kPair.publicKey));
-        console.log("Step 1 Balance:", step1Balance/LAMPORTS_PER_SOL)
+      //Get balance for Step 1:
+      let step1Balance = await connection.getBalance(new PublicKey(fromPair.publicKey));
+      console.log("Step 1 Balance:", step1Balance/LAMPORTS_PER_SOL)
     };
   
 
@@ -137,7 +142,7 @@ function App() {
       try {
 // connects wallet and returns response which includes the wallet public key
         const response = await solana.connect();
-        setstep2PKey(response.publicKey)
+        setToKey(response.publicKey)
         console.log('Step 2 wallet account ', response.publicKey.toString());
 // update walletKey to be the public key
         setWalletKey(response.publicKey.toString());
@@ -158,17 +163,17 @@ function App() {
       const connection = new Connection(clusterApiUrl("devnet"), "confirmed");
       var transaction = new Transaction().add(
         SystemProgram.transfer({
-          fromPubkey: step1kPair.publicKey,
+          fromPubkey: fromPair.publicKey,
           toPubkey: step2Wallet.publicKey,
           lamports: LAMPORTS_PER_SOL / 100
         })
       );
       //Sign transaction
-      console.log(step1kPair)
+      console.log(fromPair)
         var signature = await sendAndConfirmTransaction(
           connection,
           transaction,
-          [step1kPair]
+          [fromPair]
         );
         console.log('Signature is ', signature);
     }
@@ -190,7 +195,7 @@ function App() {
               fontWeight: "bold",
               borderRadius: "5px",
             }}
-            onClick={createWallet}
+            onClick={step1}
           >
             Create Solana Wallet
           </button>
@@ -233,7 +238,6 @@ function App() {
         )}
       </div>
     );
-  };
 }
 
 export default App;
